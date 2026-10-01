@@ -5,61 +5,58 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.widget.Toast;
 
-import java.io.InputStream;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 
 public class MainActivity extends Activity {
-    private static final String SCRIPT =
-            "/data/adb/modules/lily-toggle/lily-toggle.sh";
-
-    private Process listenerProcess;
+    private static final String LAUNCHER =
+            "/data/adb/modules/lily-toggle/launch.sh";
 
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
 
-        startListener();
-
-        new Handler(getMainLooper()).postDelayed(() -> {
-            Toast.makeText(this, "Lily Toggle đã chạy", Toast.LENGTH_SHORT).show();
-
-            // Do not finish(). Keep this Activity/process alive while the
-            // root shell runs. The window is transparent, so the launcher
-            // remains visually available underneath it.
-        }, 250);
-    }
-
-    private void startListener() {
-        if (listenerProcess != null && listenerProcess.isAlive()) {
-            return;
-        }
-
         new Thread(() -> {
+            boolean ok = false;
             try {
+                /*
+                 * Ask Magisk su to execute the module-side launcher.
+                 * The launcher itself detaches the actual listener from
+                 * this Android process.
+                 */
                 Process p = new ProcessBuilder(
-                        "su", "-c",
-                        "/system/bin/sh " + SCRIPT
+                        "su", "-c", LAUNCHER
                 ).redirectErrorStream(true).start();
 
-                listenerProcess = p;
+                BufferedReader br = new BufferedReader(
+                        new InputStreamReader(p.getInputStream()));
 
-                // Drain output so the child cannot block on a full pipe.
-                InputStream in = p.getInputStream();
-                byte[] buffer = new byte[256];
-                while (p.isAlive()) {
-                    while (in.available() > 0) {
-                        in.read(buffer);
-                    }
-                    Thread.sleep(100);
+                String line;
+                StringBuilder output = new StringBuilder();
+                while ((line = br.readLine()) != null) {
+                    output.append(line).append('\n');
                 }
+
+                int rc = p.waitFor();
+                ok = (rc == 0);
+
             } catch (Exception ignored) {
             }
-        }, "LilyToggleRoot").start();
-    }
 
-    @Override
-    protected void onDestroy() {
-        // Deliberately do NOT destroy the root listener here.
-        // The listener should survive the Activity window lifecycle.
-        super.onDestroy();
+            final boolean result = ok;
+            new Handler(getMainLooper()).post(() -> {
+                Toast.makeText(
+                        this,
+                        result ? "Lily Toggle đã chạy" : "Lily Toggle lỗi",
+                        Toast.LENGTH_SHORT
+                ).show();
+
+                /*
+                 * The user explicitly accepts the current screen remaining
+                 * in front. Keep the Activity alive; the listener is detached
+                 * by launch.sh and does not depend on this Activity.
+                 */
+            });
+        }, "LilyToggleLauncher").start();
     }
 }
