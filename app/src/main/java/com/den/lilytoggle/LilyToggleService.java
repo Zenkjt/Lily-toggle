@@ -8,6 +8,9 @@ import android.content.Intent;
 import android.os.Build;
 import android.os.IBinder;
 
+import java.io.File;
+import java.io.IOException;
+
 public class LilyToggleService extends Service {
     private static final String CHANNEL_ID = "lily_toggle";
     private static final int NOTIFICATION_ID = 1001;
@@ -39,20 +42,48 @@ public class LilyToggleService extends Service {
 
         new Thread(() -> {
             try {
-                // Do NOT use '&' here. Keep the root shell attached to
-                // this Service while lily-toggle.sh runs.
+                String su = findSu();
                 Process p = new ProcessBuilder(
-                        "su", "-c",
-                        "/system/bin/sh " + SCRIPT
+                        su, "-c",
+                        "exec /system/bin/sh " + SCRIPT
                 ).redirectErrorStream(true).start();
 
                 listenerProcess = p;
                 p.waitFor();
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                writeError(e);
             } finally {
                 listenerProcess = null;
             }
         }, "LilyToggleRoot").start();
+    }
+
+    private String findSu() throws IOException {
+        String[] candidates = {
+                "/system/xbin/su",
+                "/system/bin/su",
+                "/sbin/su"
+        };
+
+        for (String path : candidates) {
+            if (new File(path).canExecute()) {
+                return path;
+            }
+        }
+
+        // Fallback: let Android resolve su through PATH.
+        return "su";
+    }
+
+    private void writeError(Exception e) {
+        try {
+            java.io.FileOutputStream out =
+                    new java.io.FileOutputStream("/data/local/tmp/lily-toggle-app.log", true);
+            String msg = e.toString() + "\n";
+            out.write(msg.getBytes("UTF-8"));
+            out.close();
+        } catch (Exception ignored) {
+        }
     }
 
     @Override

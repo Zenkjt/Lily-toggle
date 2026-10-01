@@ -14,8 +14,8 @@ public class MainActivity extends Activity {
         startService(new Intent(this, LilyToggleService.class));
 
         new Handler(getMainLooper()).postDelayed(() -> {
-            Toast.makeText(this, "Lily Toggle đang chạy", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Lily Toggle đã bật", Toast.LENGTH_SHORT).show();
             finish();
-        }, 250);
+        }, 350);
     }
 }
